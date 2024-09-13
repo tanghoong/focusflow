@@ -9,11 +9,16 @@ import BoardList from '@/components/BoardList';
 import TemplateList from '@/components/TemplateList';
 import Accordion from '@/components/Accordion';
 import AgendaSidebar from '@/components/AgendaSidebar';
-import { Plus, Search, Calendar, PanelRight } from 'lucide-react';
+import { Plus, Search, Calendar, PanelRight, Trophy, Target, TrendingUp, Activity } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import ResetDatabaseButton from '@/components/ResetDatabaseButton';
+import Header from './components/Header';
+import GetThingsDone from './components/GetThingsDone';
+import RecentActivities from './components/RecentActivities';
+import BoardLists from './components/BoardLists';
+import TemplateSection from './components/TemplateSection';
 
 const boardTemplates = [
   {
@@ -198,143 +203,65 @@ const HomeContent: React.FC = () => {
 
   const tags = ['all', ...Array.from(new Set(boardTemplates.map(template => template.type)))];
 
+  // Updated dummy data with more variation
+  const gamifyData = {
+    tasksCompleted: 42,
+    streakDays: 7,
+    productivityScore: 85,
+    productivityTrend: [65, 78, 62, 85, 71, 90, 85], // More varied data for last 7 days
+  };
+
+  // Function to generate points for the line chart
+  const generateChartPoints = (data: number[], width: number, height: number) => {
+    const linePoints = data.map((value, index) => {
+      const x = (index / (data.length - 1)) * width;
+      const y = height - (value / 100) * height;
+      return `${x},${y}`;
+    }).join(' ');
+
+    const curvedLinePoints = `M${linePoints}`;
+
+    const areaPoints = `${curvedLinePoints} L ${width},${height} L 0,${height} Z`;
+
+    return { curvedLinePoints, areaPoints };
+  };
+
+  // Dummy data for Recent Activities
+  const recentActivities = [
+    { id: '1', type: 'task', description: 'Completed task "Update presentation"', timestamp: '2 hours ago' },
+    { id: '2', type: 'board', description: 'Created new board "Q2 Planning"', timestamp: '1 day ago' },
+    { id: '3', type: 'comment', description: 'Commented on "Budget Review"', timestamp: '3 days ago' },
+  ];
+
   return (
     <div className={`transition-all duration-300 ease-in-out ${isAgendaOpen ? 'mr-96' : ''}`}>
       <div className="w-full max-w-6xl mx-auto px-4">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-solarized-cyan">Welcome, Charlie</h1>
-          <div className="flex items-center space-x-4">
-            <ResetDatabaseButton />
-            <button
-              onClick={() => setIsNewBoardModalOpen(true)}
-              className="bg-solarized-blue text-solarized-base3 hover:bg-opacity-80 transition-colors p-1 rounded-full"
-            >
-              <Plus size={16} />
-            </button>
-            <button
-              onClick={() => setIsAgendaOpen(!isAgendaOpen)}
-              className="text-solarized-base1 hover:text-solarized-base0 p-2 rounded-full hover:bg-solarized-base02"
-            >
-              <PanelRight size={24} />
-            </button>
-          </div>
-        </div>
-        
-        {/* Board Lists */}
-        {isLoading ? (
-          <p className="text-solarized-base1">Loading boards...</p>
-        ) : error ? (
-          <p className="text-solarized-red">Error loading boards: {error.message}</p>
-        ) : (
-          <>
-            <Accordion 
-              title="Pinned Boards" 
-              isExpanded={expandedSection === 'pinned'}
-              onToggle={() => setExpandedSection(expandedSection === 'pinned' ? null : 'pinned')}
-            >
-              {pinnedBoards.length > 0 ? (
-                <BoardList
-                      boards={pinnedBoards}
-                      onMoveBoard={handleMoveBoard}
-                      onEditBoard={handleEditBoard}
-                      onViewBoard={handleViewBoard}
-                      onDeleteBoard={handleDeleteBoard}
-                      onPinBoard={handlePinBoard} title={''}                />
-              ) : (
-                <p className="text-solarized-base1">No pinned boards yet. Pin a board to see it here!</p>
-              )}
-            </Accordion>
-            <Accordion 
-              title="All Boards"
-              isExpanded={expandedSection === 'all'}
-              onToggle={() => setExpandedSection(expandedSection === 'all' ? null : 'all')}
-            >
-              {allBoards.length > 0 ? (
-                <BoardList
-                      boards={allBoards}
-                      onMoveBoard={handleMoveBoard}
-                      onEditBoard={handleEditBoard}
-                      onViewBoard={handleViewBoard}
-                      onDeleteBoard={handleDeleteBoard}
-                      onPinBoard={handlePinBoard} title={''}                />
-              ) : (
-                <p className="text-solarized-base1">No boards yet. Create a new board to get started!</p>
-              )}
-            </Accordion>
-          </>
-        )}
-
-        {/* Templates Section */}
-        <Accordion 
-          title="Board Templates"
-          isExpanded={expandedSection === 'templates'}
-          onToggle={() => setExpandedSection(expandedSection === 'templates' ? null : 'templates')}
-        >
-          <div className="mb-4">
-            <div className="relative">
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search templates..."
-                className="bg-solarized-base01 text-solarized-base3 px-4 py-2 rounded-full w-full pl-10"
-              />
-              <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-solarized-base1" />
-            </div>
-          </div>
-          <div className="mb-4 flex flex-wrap gap-2">
-            {tags.map(tag => (
-              <button
-                key={tag}
-                onClick={() => setActiveTag(tag)}
-                className={`px-3 py-1 rounded-full text-sm ${
-                  activeTag === tag
-                    ? 'bg-solarized-blue text-solarized-base3'
-                    : 'bg-solarized-base01 text-solarized-base0 hover:bg-solarized-base00'
-                }`}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
-          <TemplateList templates={filteredTemplates} onSelectTemplate={setSelectedTemplate} />
-        </Accordion>
-
+        <Header 
+          onNewBoard={() => setIsNewBoardModalOpen(true)} 
+          onToggleAgenda={() => setIsAgendaOpen(!isAgendaOpen)} 
+        />
+        <GetThingsDone gamifyData={gamifyData} />
+        {/* <RecentActivities activities={recentActivities} /> */}
+        <BoardLists 
+          isLoading={isLoading}
+          error={error}
+          pinnedBoards={pinnedBoards}
+          allBoards={allBoards}
+          expandedSection={expandedSection}
+          onToggleSection={setExpandedSection}
+          onMoveBoard={handleMoveBoard}
+          onEditBoard={handleEditBoard}
+          onViewBoard={handleViewBoard}
+          onDeleteBoard={handleDeleteBoard}
+          onPinBoard={handlePinBoard}
+        />
+        <TemplateSection expandedSection={null} onToggleSection={function (section: string): void {
+          throw new Error('Function not implemented.');
+        } } boardTemplates={[]} onSelectTemplate={function (template: any): void {
+          throw new Error('Function not implemented.');
+        } }          // Add necessary props
+        />
         <NewBoardModal isOpen={isNewBoardModalOpen} onClose={() => setIsNewBoardModalOpen(false)} />
-
-        {/* Template selection modal */}
-        {selectedTemplate && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-solarized-base03 p-6 rounded-lg w-full max-w-md">
-              <h2 className="text-xl font-bold text-solarized-blue mb-4">Create Board from Template</h2>
-              <p className="text-solarized-base1 mb-4">Template: {selectedTemplate.name}</p>
-              <input
-                type="text"
-                value={newBoardName}
-                onChange={(e) => setNewBoardName(e.target.value)}
-                placeholder="Enter board name"
-                className="bg-solarized-base01 text-solarized-base3 px-3 py-2 rounded-full w-full mb-4"
-              />
-              <div className="flex justify-end space-x-2">
-                <button
-                  onClick={() => setSelectedTemplate(null)}
-                  className="bg-solarized-red text-solarized-base3 px-4 py-2 rounded-full hover:bg-opacity-80 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreateTemplateBoard}
-                  disabled={!newBoardName.trim()}
-                  className="bg-solarized-blue text-solarized-base3 px-4 py-2 rounded-full hover:bg-opacity-80 transition-colors disabled:opacity-50"
-                >
-                  Create Board
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         <AgendaSidebar isOpen={isAgendaOpen} onClose={() => setIsAgendaOpen(false)} />
       </div>
     </div>
