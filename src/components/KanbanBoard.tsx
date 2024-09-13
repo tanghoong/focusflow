@@ -9,6 +9,7 @@ import { Plus, Edit2, Trash2, GripVertical } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import CardModal from './CardModal';
 import CardDetailModal from './CardDetailModal';
+import AddListForm from './KanbanBoard/AddListForm';
 
 interface KanbanBoardProps {
   boardId: string;
@@ -223,6 +224,11 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ boardId }) => {
   return (
     <DndProvider backend={HTML5Backend}>
       <div className="flex overflow-x-auto p-2 space-x-2 custom-scrollbar min-h-[calc(100vh-8rem)] max-h-[calc(100vh-8rem)] snap-x snap-mandatory">
+        <AddListForm
+          onAddList={handleAddList}
+          totalLists={orderedLists.length}
+          totalTasks={tasks?.length || 0}
+        />
         {orderedLists.map((list, index) => (
           <ListComponent
             key={list.id}
@@ -244,22 +250,6 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ boardId }) => {
             setSelectedCard={setSelectedCard}
           />
         ))}
-        <div className="w-72 flex-shrink-0 snap-center p-2">
-          <input
-            type="text"
-            value={newListTitle}
-            onChange={(e) => setNewListTitle(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleAddList()}
-            placeholder="Enter list title"
-            className="bg-solarized-base01 text-solarized-base3 px-2 py-1 rounded w-full mb-2 text-sm"
-          />
-          <button
-            onClick={handleAddList}
-            className="bg-solarized-blue text-solarized-base3 px-2 py-1 rounded w-full text-sm hover:bg-opacity-80 transition-colors flex items-center justify-center"
-          >
-            <Plus size={14} className="mr-1" /> Add List
-          </button>
-        </div>
       </div>
       {selectedCard && (
         <CardDetailModal

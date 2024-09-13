@@ -1,16 +1,19 @@
 'use client'
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useBoards, useUpdateBoard, useDeleteBoard, useAddBoard, useReorderBoards } from '@/hooks/useData';
 import { Board } from '@/types';
+import dynamic from 'next/dynamic';
 import NewBoardModal from '@/components/NewBoardModal';
 import BoardList from '@/components/BoardList';
 import TemplateList from '@/components/TemplateList';
 import Accordion from '@/components/Accordion';
-import { Plus, Search } from 'lucide-react';
+import AgendaSidebar from '@/components/AgendaSidebar';
+import { Plus, Search, Calendar, PanelRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import ResetDatabaseButton from '@/components/ResetDatabaseButton';
 
 const boardTemplates = [
   {
@@ -111,7 +114,7 @@ const boardTemplates = [
   }
 ];
 
-export default function Home() {
+const HomeContent: React.FC = () => {
   const router = useRouter();
   const { data: boards, isLoading, error } = useBoards();
   const updateBoard = useUpdateBoard();
@@ -124,6 +127,17 @@ export default function Home() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTag, setActiveTag] = useState('all');
   const [expandedSection, setExpandedSection] = useState<string | null>('pinned');
+  const [isAgendaOpen, setIsAgendaOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('isAgendaOpen');
+      return saved !== null ? JSON.parse(saved) : true;
+    }
+    return true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('isAgendaOpen', JSON.stringify(isAgendaOpen));
+  }, [isAgendaOpen]);
 
   const handleEditBoard = useCallback((board: Board) => {
     // Implement edit functionality
@@ -185,17 +199,26 @@ export default function Home() {
   const tags = ['all', ...Array.from(new Set(boardTemplates.map(template => template.type)))];
 
   return (
-    <DndProvider backend={HTML5Backend}>
+    <div className={`transition-all duration-300 ease-in-out ${isAgendaOpen ? 'mr-96' : ''}`}>
       <div className="w-full max-w-6xl mx-auto px-4">
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold text-solarized-cyan">Welcome, Charlie</h1>
-          <button
-            onClick={() => setIsNewBoardModalOpen(true)}
-            className="bg-solarized-blue text-solarized-base3 px-4 py-2 rounded-full hover:bg-opacity-80 transition-colors flex items-center text-sm"
-          >
-            <Plus size={18} className="mr-2" /> New Board
-          </button>
+          <div className="flex items-center space-x-4">
+            <ResetDatabaseButton />
+            <button
+              onClick={() => setIsNewBoardModalOpen(true)}
+              className="bg-solarized-blue text-solarized-base3 hover:bg-opacity-80 transition-colors p-1 rounded-full"
+            >
+              <Plus size={16} />
+            </button>
+            <button
+              onClick={() => setIsAgendaOpen(!isAgendaOpen)}
+              className="text-solarized-base1 hover:text-solarized-base0 p-2 rounded-full hover:bg-solarized-base02"
+            >
+              <PanelRight size={24} />
+            </button>
+          </div>
         </div>
         
         {/* Board Lists */}
@@ -212,13 +235,12 @@ export default function Home() {
             >
               {pinnedBoards.length > 0 ? (
                 <BoardList
-                  boards={pinnedBoards}
-                  onMoveBoard={handleMoveBoard}
-                  onEditBoard={handleEditBoard}
-                  onViewBoard={handleViewBoard}
-                  onDeleteBoard={handleDeleteBoard}
-                  onPinBoard={handlePinBoard}
-                />
+                      boards={pinnedBoards}
+                      onMoveBoard={handleMoveBoard}
+                      onEditBoard={handleEditBoard}
+                      onViewBoard={handleViewBoard}
+                      onDeleteBoard={handleDeleteBoard}
+                      onPinBoard={handlePinBoard} title={''}                />
               ) : (
                 <p className="text-solarized-base1">No pinned boards yet. Pin a board to see it here!</p>
               )}
@@ -230,13 +252,12 @@ export default function Home() {
             >
               {allBoards.length > 0 ? (
                 <BoardList
-                  boards={allBoards}
-                  onMoveBoard={handleMoveBoard}
-                  onEditBoard={handleEditBoard}
-                  onViewBoard={handleViewBoard}
-                  onDeleteBoard={handleDeleteBoard}
-                  onPinBoard={handlePinBoard}
-                />
+                      boards={allBoards}
+                      onMoveBoard={handleMoveBoard}
+                      onEditBoard={handleEditBoard}
+                      onViewBoard={handleViewBoard}
+                      onDeleteBoard={handleDeleteBoard}
+                      onPinBoard={handlePinBoard} title={''}                />
               ) : (
                 <p className="text-solarized-base1">No boards yet. Create a new board to get started!</p>
               )}
@@ -313,7 +334,22 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        <AgendaSidebar isOpen={isAgendaOpen} onClose={() => setIsAgendaOpen(false)} />
       </div>
-    </DndProvider>
+    </div>
+  );
+};
+
+const DndProviderWithNoSSR = dynamic(
+  () => import('react-dnd').then((mod) => mod.DndProvider),
+  { ssr: false }
+);
+
+export default function Home() {
+  return (
+    <DndProviderWithNoSSR backend={HTML5Backend}>
+      <HomeContent />
+    </DndProviderWithNoSSR>
   );
 }

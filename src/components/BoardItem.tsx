@@ -35,7 +35,10 @@ const BoardItem: React.FC<BoardItemProps> = ({ board, index, onMove, onEdit, onV
 
   return (
     <div 
-      ref={(node) => drag(drop(node))} 
+      ref={node => {
+        drag(node);
+        drop(node);
+      }}
       className={`bg-solarized-base02 p-4 rounded-lg transition-colors ${
         isDragging ? 'opacity-50 shadow-lg outline outline-2 outline-solarized-blue' : 'hover:bg-solarized-base01'
       }`}
