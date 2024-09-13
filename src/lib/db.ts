@@ -125,7 +125,7 @@ export async function reorderBoards(boards: Board[]): Promise<void> {
   if (typeof window === 'undefined') throw new Error('Cannot reorder boards on server');
   const db = await getDB();
   const tx = db.transaction('boards', 'readwrite');
-  await Promise.all(boards.map(board => tx.store.put(board)));
+  await Promise.all(boards.map((board, index) => tx.store.put({ ...board, order: index })));
   await tx.done;
 }
 

@@ -51,9 +51,25 @@ export function useBoards() {
 export function useAddBoard() {
   const queryClient = useQueryClient();
   return useMutation<string, Error, Board>({
-    mutationFn: db.addBoard,
-    onSuccess: () => {
+    mutationFn: async (board) => {
+      const boardId = await db.addBoard(board);
+      // If the board has predefined lists, add them
+      if (board.lists) {
+        const listPromises = board.lists.map((listTitle, index) => 
+          db.addList({
+            id: `list-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            boardId,
+            title: listTitle,
+            order: index,
+          })
+        );
+        await Promise.all(listPromises);
+      }
+      return boardId;
+    },
+    onSuccess: (boardId) => {
       queryClient.invalidateQueries({ queryKey: ['boards'] });
+      queryClient.invalidateQueries({ queryKey: ['lists', boardId] });
     },
   });
 }
@@ -129,8 +145,8 @@ export function useReorderBoards() {
   const queryClient = useQueryClient();
   return useMutation<void, Error, Board[]>({
     mutationFn: db.reorderBoards,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['boards'] });
+    onSuccess: (_, updatedBoards) => {
+      queryClient.setQueryData(['boards'], updatedBoards);
     },
   });
 }

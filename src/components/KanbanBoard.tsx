@@ -1,20 +1,20 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
+import { DndProvider, useDrag, useDrop } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
 import { useLists, useAddList, useUpdateList, useDeleteList, useTasks, useAddTask, useUpdateTask, useDeleteTask } from '@/hooks/useData';
 import { List, Task } from '@/types';
 import { Plus, Edit2, Trash2, GripVertical } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import CardModal from './CardModal';
+import CardDetailModal from './CardDetailModal';
 
 interface KanbanBoardProps {
   boardId: string;
 }
 
 const KanbanBoard: React.FC<KanbanBoardProps> = ({ boardId }) => {
-  console.log('Rendering KanbanBoard with boardId:', boardId);
-
   const { data: lists, isLoading: listsLoading } = useLists(boardId);
   const { data: tasks, isLoading: tasksLoading } = useTasks(boardId);
   const addList = useAddList();
@@ -25,64 +25,78 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ boardId }) => {
   const deleteTask = useDeleteTask();
 
   const [orderedLists, setOrderedLists] = useState<List[]>([]);
+  const [orderedTasks, setOrderedTasks] = useState<{ [listId: string]: Task[] }>({});
   const [newListTitle, setNewListTitle] = useState('');
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingListTitle, setEditingListTitle] = useState('');
   const [newTaskTitles, setNewTaskTitles] = useState<{ [listId: string]: string }>({});
   const [focusedListId, setFocusedListId] = useState<string | null>(null);
-
   const [selectedCard, setSelectedCard] = useState<Task | null>(null);
+  const [isCardDetailModalOpen, setIsCardDetailModalOpen] = useState(false);
+  const [selectedListForNewCard, setSelectedListForNewCard] = useState<string | null>(null);
 
   useEffect(() => {
     if (lists) {
-      console.log('Updating orderedLists with:', lists);
       setOrderedLists(lists.sort((a, b) => a.order - b.order));
     }
   }, [lists]);
 
-  const handleDragEnd = useCallback((result: DropResult) => {
-    console.log('Drag ended:', result);
-    const { source, destination, type } = result;
+  useEffect(() => {
+    if (tasks) {
+      const tasksByList = tasks.reduce((acc, task) => {
+        if (!acc[task.listId]) {
+          acc[task.listId] = [];
+        }
+        acc[task.listId].push(task);
+        return acc;
+      }, {} as { [listId: string]: Task[] });
 
-    if (!destination) return;
-
-    if (type === 'LIST') {
-      const newLists = Array.from(orderedLists);
-      const [reorderedList] = newLists.splice(source.index, 1);
-      newLists.splice(destination.index, 0, reorderedList);
-      setOrderedLists(newLists);
-      newLists.forEach((list, index) => {
-        updateList.mutate({ ...list, order: index });
+      Object.keys(tasksByList).forEach(listId => {
+        tasksByList[listId].sort((a, b) => a.order - b.order);
       });
-    } else if (type === 'TASK') {
-      const sourceList = orderedLists.find(list => list.id === source.droppableId);
-      const destList = orderedLists.find(list => list.id === destination.droppableId);
-      
-      if (sourceList && destList && tasks) {
-        const sourceTasks = Array.from(tasks.filter(task => task.listId === sourceList.id));
-        const destTasks = source.droppableId === destination.droppableId
-          ? sourceTasks
-          : Array.from(tasks.filter(task => task.listId === destList.id));
 
-        const [movedTask] = sourceTasks.splice(source.index, 1);
-        destTasks.splice(destination.index, 0, { ...movedTask, listId: destList.id });
-
-        const updatedTasks = [
-          ...tasks.filter(task => task.listId !== sourceList.id && task.listId !== destList.id),
-          ...sourceTasks.map((task, index) => ({ ...task, order: index })),
-          ...destTasks.map((task, index) => ({ ...task, order: index })),
-        ];
-
-        updatedTasks.forEach(task => {
-          updateTask.mutate(task);
-        });
-      }
+      setOrderedTasks(tasksByList);
     }
-  }, [orderedLists, tasks, updateList, updateTask]);
+  }, [tasks]);
+
+  const moveList = useCallback((dragIndex: number, hoverIndex: number) => {
+    const newLists = Array.from(orderedLists);
+    const [reorderedList] = newLists.splice(dragIndex, 1);
+    newLists.splice(hoverIndex, 0, reorderedList);
+    setOrderedLists(newLists);
+    newLists.forEach((list, index) => {
+      updateList.mutate({ ...list, order: index });
+    });
+  }, [orderedLists, updateList]);
+
+  const moveTask = useCallback((dragListId: string, dragIndex: number, hoverListId: string, hoverIndex: number) => {
+    const newOrderedTasks = { ...orderedTasks };
+    const sourceTasks = Array.from(newOrderedTasks[dragListId] || []);
+    const destTasks = dragListId === hoverListId
+      ? sourceTasks
+      : Array.from(newOrderedTasks[hoverListId] || []);
+
+    const [movedTask] = sourceTasks.splice(dragIndex, 1);
+    destTasks.splice(hoverIndex, 0, { ...movedTask, listId: hoverListId });
+
+    newOrderedTasks[dragListId] = sourceTasks;
+    newOrderedTasks[hoverListId] = destTasks;
+
+    setOrderedTasks(newOrderedTasks);
+
+    // Update tasks in the database
+    const updatedTasks = [
+      ...sourceTasks.map((task, index) => ({ ...task, order: index })),
+      ...destTasks.map((task, index) => ({ ...task, listId: hoverListId, order: index })),
+    ];
+
+    updatedTasks.forEach(task => {
+      updateTask.mutate(task);
+    });
+  }, [orderedTasks, updateTask]);
 
   const handleAddList = useCallback(() => {
     if (newListTitle.trim()) {
-      console.log('Adding new list:', newListTitle);
       const newList: List = {
         id: `list-${Date.now()}`,
         boardId,
@@ -103,7 +117,6 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ boardId }) => {
 
   const handleSaveListTitle = useCallback(() => {
     if (editingListId && editingListTitle.trim()) {
-      console.log('Saving list title:', editingListTitle);
       const listToUpdate = orderedLists.find(list => list.id === editingListId);
       if (listToUpdate) {
         const updatedList = {
@@ -126,50 +139,72 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ boardId }) => {
       return;
     }
     if (confirm('Are you sure you want to delete this list?')) {
-      console.log('Deleting list:', listId);
       deleteList.mutate(listId);
       setOrderedLists(prev => prev.filter(list => list.id !== listId));
       toast.success('List deleted');
     }
   }, [deleteList, tasks]);
 
-  const handleAddTask = useCallback((listId: string) => {
+  const handleQuickAddTask = useCallback((listId: string) => {
     const taskTitle = newTaskTitles[listId]?.trim();
     if (taskTitle) {
-      console.log('Adding new task:', taskTitle, 'to list:', listId);
       const newTask: Task = {
         id: `task-${Date.now()}`,
         listId,
         boardId,
         title: taskTitle,
-        order: 0, // Add at the top
+        order: orderedTasks[listId]?.length || 0,
       };
       addTask.mutate(newTask);
       setNewTaskTitles(prev => ({ ...prev, [listId]: '' }));
+      setOrderedTasks(prev => ({
+        ...prev,
+        [listId]: [...(prev[listId] || []), newTask],
+      }));
       toast.success('New task added');
     }
-  }, [addTask, boardId, newTaskTitles]);
+  }, [addTask, boardId, newTaskTitles, orderedTasks]);
 
-  const handleKeyPress = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>, listId: string) => {
-    if (e.key === 'Enter' && !e.ctrlKey) {
-      e.preventDefault();
-      handleAddTask(listId);
-    }
-  }, [handleAddTask]);
+  const handleOpenCardDetailModal = useCallback((listId: string) => {
+    setSelectedListForNewCard(listId);
+    setIsCardDetailModalOpen(true);
+  }, []);
 
-  const handleCardDoubleClick = (task: Task) => {
-    setSelectedCard(task);
-  };
+  const handleCardDetailSubmit = useCallback((newTask: Task) => {
+    addTask.mutate(newTask);
+    setOrderedTasks(prev => ({
+      ...prev,
+      [newTask.listId]: [...(prev[newTask.listId] || []), newTask],
+    }));
+    setIsCardDetailModalOpen(false);
+    setSelectedListForNewCard(null);
+    toast.success('New task added');
+  }, [addTask]);
 
-  const handleCardUpdate = (updatedTask: Task) => {
+  const handleCardUpdate = useCallback((updatedTask: Task) => {
     updateTask.mutate(updatedTask);
+    setOrderedTasks(prev => ({
+      ...prev,
+      [updatedTask.listId]: prev[updatedTask.listId].map(task =>
+        task.id === updatedTask.id ? updatedTask : task
+      ),
+    }));
     setSelectedCard(null);
-  };
+  }, [updateTask]);
 
-  const handleCardDelete = (taskId: string) => {
-    deleteTask.mutate(taskId);
-    setSelectedCard(null);
-  };
+  const handleCardDelete = useCallback((taskId: string) => {
+    const listId = Object.keys(orderedTasks).find(listId =>
+      orderedTasks[listId].some(task => task.id === taskId)
+    );
+    if (listId) {
+      deleteTask.mutate(taskId);
+      setOrderedTasks(prev => ({
+        ...prev,
+        [listId]: prev[listId].filter(task => task.id !== taskId),
+      }));
+      setSelectedCard(null);
+    }
+  }, [deleteTask, orderedTasks]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -186,129 +221,231 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ boardId }) => {
   }
 
   return (
-    <>
-      <DragDropContext onDragEnd={handleDragEnd}>
-        <Droppable droppableId="board" type="LIST" direction="horizontal">
-          {(provided) => (
-            <div
-              {...provided.droppableProps}
-              ref={provided.innerRef}
-              className="flex overflow-x-auto p-4 space-x-4 custom-scrollbar min-h-[calc(100vh-10rem)] max-h-[calc(100vh-10rem)] snap-x snap-mandatory"
-            >
-              {orderedLists.map((list, index) => (
-                <Draggable key={list.id} draggableId={list.id} index={index}>
-                  {(provided) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.draggableProps}
-                      className="bg-solarized-base02 p-2 rounded-md w-80 flex-shrink-0 snap-center flex flex-col max-h-full"
-                    >
-                      <div {...provided.dragHandleProps} className="flex justify-between items-center mb-2">
-                        <div className="flex items-center">
-                          <GripVertical size={16} className="text-solarized-base1 mr-2" />
-                          {editingListId === list.id ? (
-                            <input
-                              type="text"
-                              value={editingListTitle}
-                              onChange={(e) => setEditingListTitle(e.target.value)}
-                              onBlur={handleSaveListTitle}
-                              onKeyPress={(e) => e.key === 'Enter' && handleSaveListTitle()}
-                              className="bg-solarized-base01 text-solarized-base3 px-2 py-1 rounded"
-                            />
-                          ) : (
-                            <h3 className="font-bold text-solarized-base1">{list.title}</h3>
-                          )}
-                        </div>
-                        <div className="flex space-x-2">
-                          <button onClick={() => handleEditList(list)} className="text-solarized-blue">
-                            <Edit2 size={16} />
-                          </button>
-                          <button onClick={() => handleDeleteList(list.id)} className="text-solarized-red">
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="mb-2 relative">
-                        <textarea
-                          value={newTaskTitles[list.id] || ''}
-                          onChange={(e) => setNewTaskTitles(prev => ({ ...prev, [list.id]: e.target.value }))}
-                          onKeyPress={(e) => handleKeyPress(e, list.id)}
-                          onFocus={() => setFocusedListId(list.id)}
-                          onBlur={() => setFocusedListId(null)}
-                          placeholder="Add a card..."
-                          className="bg-solarized-base01 text-solarized-base3 px-2 py-1 rounded w-full resize-none"
-                          rows={2}
-                        />
-                        {focusedListId === list.id && (
-                          <button
-                            onClick={() => handleAddTask(list.id)}
-                            className="absolute right-2 bottom-2 bg-solarized-blue text-solarized-base3 p-1 rounded hover:bg-opacity-80 transition-colors"
-                          >
-                            <Plus size={16} />
-                          </button>
-                        )}
-                      </div>
-                      <Droppable droppableId={list.id} type="TASK">
-                        {(provided) => (
-                          <div {...provided.droppableProps} ref={provided.innerRef} className="min-h-[50px] overflow-y-auto flex-grow custom-scrollbar pr-2">
-                            {tasks
-                              ?.filter(task => task.listId === list.id)
-                              .sort((a, b) => a.order - b.order)
-                              .map((task, index) => (
-                                <Draggable key={task.id} draggableId={task.id} index={index}>
-                                  {(provided, snapshot) => (
-                                    <div
-                                      ref={provided.innerRef}
-                                      {...provided.draggableProps}
-                                      {...provided.dragHandleProps}
-                                      className={`bg-solarized-base01 p-2 mb-2 rounded shadow ${
-                                        snapshot.isDragging ? 'opacity-50' : ''
-                                      }`}
-                                      onDoubleClick={() => handleCardDoubleClick(task)}
-                                    >
-                                      <div className="whitespace-pre-wrap break-words">{task.title}</div>
-                                    </div>
-                                  )}
-                                </Draggable>
-                              ))}
-                            {provided.placeholder}
-                          </div>
-                        )}
-                      </Droppable>
-                    </div>
-                  )}
-                </Draggable>
-              ))}
-              {provided.placeholder}
-              <div className="w-80 flex-shrink-0 snap-center">
-                <input
-                  type="text"
-                  value={newListTitle}
-                  onChange={(e) => setNewListTitle(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleAddList()}
-                  placeholder="Enter list title"
-                  className="bg-solarized-base01 text-solarized-base3 px-2 py-1 rounded w-full mb-2"
-                />
-                <button
-                  onClick={handleAddList}
-                  className="bg-solarized-blue text-solarized-base3 p-2 rounded hover:bg-opacity-80 transition-colors w-full flex items-center justify-center"
-                >
-                  <Plus size={20} className="mr-2" /> Add List
-                </button>
-              </div>
-            </div>
-          )}
-        </Droppable>
-      </DragDropContext>
+    <DndProvider backend={HTML5Backend}>
+      <div className="flex overflow-x-auto p-2 space-x-2 custom-scrollbar min-h-[calc(100vh-8rem)] max-h-[calc(100vh-8rem)] snap-x snap-mandatory">
+        {orderedLists.map((list, index) => (
+          <ListComponent
+            key={list.id}
+            list={list}
+            index={index}
+            tasks={orderedTasks[list.id] || []}
+            onMoveList={moveList}
+            onMoveTask={moveTask}
+            onAddTask={handleQuickAddTask}
+            onEditList={handleEditList}
+            onDeleteList={handleDeleteList}
+            onOpenCardDetailModal={handleOpenCardDetailModal}
+            editingListId={editingListId}
+            editingListTitle={editingListTitle}
+            setEditingListTitle={setEditingListTitle}
+            handleSaveListTitle={handleSaveListTitle}
+            newTaskTitles={newTaskTitles}
+            setNewTaskTitles={setNewTaskTitles}
+            setSelectedCard={setSelectedCard}
+          />
+        ))}
+        <div className="w-72 flex-shrink-0 snap-center p-2">
+          <input
+            type="text"
+            value={newListTitle}
+            onChange={(e) => setNewListTitle(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleAddList()}
+            placeholder="Enter list title"
+            className="bg-solarized-base01 text-solarized-base3 px-2 py-1 rounded w-full mb-2 text-sm"
+          />
+          <button
+            onClick={handleAddList}
+            className="bg-solarized-blue text-solarized-base3 px-2 py-1 rounded w-full text-sm hover:bg-opacity-80 transition-colors flex items-center justify-center"
+          >
+            <Plus size={14} className="mr-1" /> Add List
+          </button>
+        </div>
+      </div>
       {selectedCard && (
-        <CardModal
+        <CardDetailModal
           card={selectedCard}
           onClose={() => setSelectedCard(null)}
           onUpdate={handleCardUpdate}
           onDelete={handleCardDelete}
         />
       )}
-    </>
+      {isCardDetailModalOpen && (
+        <CardDetailModal
+          listId={selectedListForNewCard!}
+          boardId={boardId}
+          onClose={() => setIsCardDetailModalOpen(false)}
+          onSubmit={handleCardDetailSubmit}
+        />
+      )}
+    </DndProvider>
+  );
+};
+
+interface ListComponentProps {
+  list: List;
+  index: number;
+  tasks: Task[];
+  onMoveList: (dragIndex: number, hoverIndex: number) => void;
+  onMoveTask: (dragListId: string, dragIndex: number, hoverListId: string, hoverIndex: number) => void;
+  onAddTask: (listId: string) => void;
+  onEditList: (list: List) => void;
+  onDeleteList: (listId: string) => void;
+  onOpenCardDetailModal: (listId: string) => void;
+  editingListId: string | null;
+  editingListTitle: string;
+  setEditingListTitle: React.Dispatch<React.SetStateAction<string>>;
+  handleSaveListTitle: () => void;
+  newTaskTitles: { [listId: string]: string };
+  setNewTaskTitles: React.Dispatch<React.SetStateAction<{ [listId: string]: string }>>;
+  setSelectedCard: React.Dispatch<React.SetStateAction<Task | null>>;
+}
+
+const ListComponent: React.FC<ListComponentProps> = ({
+  list,
+  index,
+  tasks,
+  onMoveList,
+  onMoveTask,
+  onAddTask,
+  onEditList,
+  onDeleteList,
+  onOpenCardDetailModal,
+  editingListId,
+  editingListTitle,
+  setEditingListTitle,
+  handleSaveListTitle,
+  newTaskTitles,
+  setNewTaskTitles,
+  setSelectedCard
+}) => {
+  const [{ isDragging }, drag, preview] = useDrag({
+    type: 'LIST',
+    item: { type: 'LIST', id: list.id, index },
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+  });
+
+  const [, drop] = useDrop({
+    accept: ['LIST', 'TASK'],
+    hover: (item: { type: string; id: string; index: number; listId?: string }, monitor) => {
+      if (item.type === 'LIST') {
+        if (item.index === index) {
+          return;
+        }
+        onMoveList(item.index, index);
+        item.index = index;
+      } else if (item.type === 'TASK' && item.listId !== list.id) {
+        onMoveTask(item.listId!, item.index, list.id, tasks.length);
+        item.index = tasks.length;
+        item.listId = list.id;
+      }
+    },
+  });
+
+  return (
+    <div
+      ref={(node) => preview(drop(node))}
+      className={`bg-solarized-base02 p-2 rounded-lg w-72 flex-shrink-0 snap-center flex flex-col max-h-full ${
+        isDragging ? 'opacity-50' : ''
+      }`}
+    >
+      <div
+        ref={(node) => drag(node)}
+        className="flex justify-between items-center mb-2 px-2 cursor-move"
+      >
+        <div className="flex items-center">
+          <GripVertical size={16} className="text-solarized-base1 mr-2" />
+          {editingListId === list.id ? (
+            <input
+              type="text"
+              value={editingListTitle}
+              onChange={(e) => setEditingListTitle(e.target.value)}
+              onBlur={handleSaveListTitle}
+              onKeyPress={(e) => e.key === 'Enter' && handleSaveListTitle()}
+              className="bg-solarized-base01 text-solarized-base3 px-2 py-1 rounded"
+            />
+          ) : (
+            <h3 className="font-bold text-solarized-base1">{list.title}</h3>
+          )}
+        </div>
+        <div className="flex space-x-1">
+          <button onClick={() => onOpenCardDetailModal(list.id)} className="text-solarized-blue p-1 rounded hover:bg-solarized-base01">
+            <Plus size={14} />
+          </button>
+          <button onClick={() => onEditList(list)} className="text-solarized-blue p-1 rounded hover:bg-solarized-base01">
+            <Edit2 size={14} />
+          </button>
+          <button onClick={() => onDeleteList(list.id)} className="text-solarized-red p-1 rounded hover:bg-solarized-base01">
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+      <div className="mb-2 px-2">
+        <textarea
+          value={newTaskTitles[list.id] || ''}
+          onChange={(e) => setNewTaskTitles(prev => ({ ...prev, [list.id]: e.target.value }))}
+          onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && onAddTask(list.id)}
+          placeholder="Add quick card..."
+          className="bg-solarized-base01 text-solarized-base3 px-2 py-1 rounded w-full resize-none text-sm"
+          rows={2}
+        />
+      </div>
+      <div className="overflow-y-auto flex-grow custom-scrollbar pr-2 min-h-[50px]">
+        {tasks.map((task, taskIndex) => (
+          <TaskComponent
+            key={task.id}
+            task={task}
+            index={taskIndex}
+            listId={list.id}
+            onMoveTask={onMoveTask}
+            setSelectedCard={setSelectedCard}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+interface TaskComponentProps {
+  task: Task;
+  index: number;
+  listId: string;
+  onMoveTask: (dragListId: string, dragIndex: number, hoverListId: string, hoverIndex: number) => void;
+  setSelectedCard: React.Dispatch<React.SetStateAction<Task | null>>;
+}
+
+const TaskComponent: React.FC<TaskComponentProps> = ({ task, index, listId, onMoveTask, setSelectedCard }) => {
+  const [{ isDragging }, drag] = useDrag({
+    type: 'TASK',
+    item: { type: 'TASK', id: task.id, listId, index },
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+  });
+
+  const [, drop] = useDrop({
+    accept: 'TASK',
+    hover: (item: { type: string; id: string; listId: string; index: number }, monitor) => {
+      if (item.listId === listId && item.index === index) {
+        return;
+      }
+      onMoveTask(item.listId, item.index, listId, index);
+      item.listId = listId;
+      item.index = index;
+    },
+  });
+
+  return (
+    <div
+      ref={(node) => drag(drop(node))}
+      className={`bg-solarized-base01 p-2 mb-2 rounded-lg shadow text-sm cursor-move ${
+        isDragging ? 'opacity-50 border-2 border-solarized-blue' : ''
+      }`}
+      onDoubleClick={() => setSelectedCard(task)}
+    >
+      <div className="whitespace-pre-wrap break-words">{task.title}</div>
+    </div>
   );
 };
 

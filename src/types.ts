@@ -5,7 +5,9 @@ export interface Task {
   listId: string;
   boardId: string;
   order: number;
-  // Add other task properties as needed
+  isRepeated?: boolean;
+  isCompleted?: boolean;
+  pomodoroCount?: number;
 }
 
 export interface List {
@@ -19,5 +21,8 @@ export interface List {
 export interface Board {
   id: string;
   title: string;
-  // Add other board properties as needed
+  type?: string;
+  description?: string;
+  lists?: string[];
+  isPinned?: boolean;
 }

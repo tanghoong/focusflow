@@ -4,6 +4,7 @@ import { ReactQueryProvider } from '@/components/ReactQueryProvider'
 import Navbar from '@/components/Navbar'
 import { Toaster } from 'react-hot-toast'
 import { ThemeProvider } from 'next-themes'
+import Script from 'next/script'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -18,28 +19,33 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={inter.className}>
+    <html lang="en" suppressHydrationWarning>
       <head>
-        <style>{`
-          .custom-scrollbar::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-          }
-          .custom-scrollbar::-webkit-scrollbar-track {
-            background: #073642;
-          }
-          .custom-scrollbar::-webkit-scrollbar-thumb {
-            background-color: #586e75;
-            border-radius: 4px;
-          }
-          .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background-color: #657b83;
-          }
-        `}</style>
+        <Script id="theme-script" strategy="beforeInteractive">
+          {`
+            (function () {
+              function getInitialColorMode() {
+                const persistedColorPreference = window.localStorage.getItem('theme');
+                const hasPersistedPreference = typeof persistedColorPreference === 'string';
+                if (hasPersistedPreference) {
+                  return persistedColorPreference;
+                }
+                const mql = window.matchMedia('(prefers-color-scheme: dark)');
+                const hasMediaQueryPreference = typeof mql.matches === 'boolean';
+                if (hasMediaQueryPreference) {
+                  return mql.matches ? 'dark' : 'light';
+                }
+                return 'light';
+              }
+              const colorMode = getInitialColorMode();
+              document.documentElement.classList.add(colorMode);
+            })()
+          `}
+        </Script>
       </head>
-      <ThemeProvider attribute="class">
-        <body className="bg-solarized-base03 text-solarized-base0 min-h-screen dark:bg-solarized-base03 dark:text-solarized-base0">
-          <ReactQueryProvider>
+      <body className={`${inter.className} bg-solarized-base03 text-solarized-base0 min-h-screen dark:bg-solarized-base03 dark:text-solarized-base0`} suppressHydrationWarning>
+        <ReactQueryProvider>
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
             <Navbar />
             <main className="px-4 py-8 overflow-x-auto custom-scrollbar">
               {children}
@@ -50,9 +56,9 @@ export default function RootLayout({
                 className: 'mt-[15vh]',
               }}
             />
-          </ReactQueryProvider>
-        </body>
-      </ThemeProvider>
+          </ThemeProvider>
+        </ReactQueryProvider>
+      </body>
     </html>
   )
 }

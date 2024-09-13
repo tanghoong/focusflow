@@ -18,9 +18,9 @@ const ResetDatabaseButton: React.FC = () => {
   return (
     <button
       onClick={handleResetDatabase}
-      className="bg-solarized-red text-solarized-base3 px-4 py-2 rounded hover:bg-opacity-80 transition-colors flex items-center"
+      className="text-solarized-base1 hover:text-solarized-red p-1 rounded-full hover:bg-solarized-base00"
     >
-      <RefreshCw size={18} className="mr-2" /> Reset Database
+      <RefreshCw size={16} />
     </button>
   );
 };
